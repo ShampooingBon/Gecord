@@ -31,13 +31,13 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             git zip unzip openjdk-17-jdk \
             python3-pip python3-venv \
-            libgl1-mesa-dev \
-            zlib1g-dev
+            build-essential ccache libncurses5:i386 libstdc++6:i386 libgtk2.0-0:i386 \
+            libgl1-mesa-dev zlib1g-dev libffi-dev libssl-dev
 
-      - name: 📦 Installer Buildozer
+      - name: 📦 Installer Buildozer et Cython
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --upgrade cython buildozer
+          python -m pip install --upgrade cython==0.29.36 buildozer
 
       - name: 🧩 Créer le fichier buildozer.spec
         run: |
