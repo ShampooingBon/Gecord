@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: ⚙️ Installer les dépendances système
+      - name: ⚙ Installer les dépendances système
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -63,7 +63,8 @@ jobs:
           EOF
 
       - name: 🔨 Compiler l'APK Android
-        run: buildozer android debug
+        run: |
+          yes | buildozer android debug
 
       - name: 📤 Télécharger l'APK généré
         uses: actions/upload-artifact@v4
