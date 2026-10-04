@@ -64,7 +64,7 @@ jobs:
 
       - name: 🔨 Compiler l'APK Android
         run: |
-          yes | buildozer android debug
+          buildozer android debug
 
       - name: 📤 Télécharger l'APK généré
         uses: actions/upload-artifact@v4
