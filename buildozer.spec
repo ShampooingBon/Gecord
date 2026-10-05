@@ -36,3 +36,6 @@ android.targetsdk = 36
 
 # (int) Minimum API your APK will support (Android 15, 16 et futurs)
 android.minsdk = 35
+
+# (str) Icon of your application
+icon.filename = %(source.dir)s/icon.jpg
