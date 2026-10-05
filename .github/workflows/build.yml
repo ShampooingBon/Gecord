@@ -7,37 +7,12 @@ on:
     branches: [ main ]
 
 jobs:
-  build-android:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: 📥 Récupérer le code du dépôt
         uses: actions/checkout@v4
-
-      - name: ☕ Installer Java Android
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: 🐍 Installer Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: ⚙ Installer les dépendances système
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            git zip unzip openjdk-17-jdk \
-            python3-pip python3-venv \
-            build-essential ccache libncurses5:i386 libstdc++6:i386 libgtk2.0-0:i386 \
-            libgl1-mesa-dev zlib1g-dev libffi-dev libssl-dev
-
-      - name: 📦 Installer Buildozer et Cython
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install --upgrade cython==0.29.36 buildozer
 
       - name: 🧩 Créer le fichier buildozer.spec
         run: |
@@ -62,14 +37,16 @@ jobs:
           warn_on_root = 1
           EOF
 
-      - name: 🔨 Compiler l'APK Android
-        run: |
-          buildozer android debug
+      - name: 🔨 Compiler avec Buildozer
+        uses: kivy/buildozer-action@v1
+        with:
+          command: android debug
+          trigger: push
 
       - name: 📤 Télécharger l'APK généré
         uses: actions/upload-artifact@v4
         with:
           name: gecord-debug-apk
-          path: ./bin/*.apk
+          path: bin/*.apk
           if-no-files-found: error
           retention-days: 30
