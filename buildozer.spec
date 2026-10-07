@@ -19,7 +19,7 @@ source.exclude_exts = spec
 source.exclude_dirs = bin, venv, .git, .github
 
 # (list) Application requirements
-requirements = python3,kivy
+requirements = python3,kivy,requests,jnius,certifi,urllib3,idna,charset-normalizer
 
 # (str) Supported orientations
 orientation = portrait
@@ -36,6 +36,9 @@ android.targetsdk = 36
 
 # (int) Minimum API your APK will support (Android 15, 16 et futurs)
 android.minsdk = 35
+
+# (list) Permissions
+android.permissions = INTERNET
 
 # (str) Icon of your application
 icon.filename = %(source.dir)s/logo.png
