@@ -38,4 +38,4 @@ android.targetsdk = 36
 android.minsdk = 35
 
 # (str) Icon of your application
-logo.filename = %(source.dir)s/logo.png
+icon.filename = %(source.dir)s/logo.png
