@@ -16,54 +16,54 @@ jobs:
   # ==========================================
   build-windows:
     name: Construire Gecorde pour Windows
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-windows:
+    name: Construire Gecorde pour Windows
     runs-on: windows-latest
 
     steps:
       - name: Récupérer le code source
         uses: actions/checkout@v4
 
-      - name: Installer Python
+      - name: Configurer Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.10'
+          cache: 'pip'
 
-      - name: Installer les dépendances
+      - name: Installer les dépendances et PyInstaller
         run: |
-          python -m pip install --upgrade pip
-          pip install kivy requests pyinstaller
+          python -m pip install --upgrade pip setuptools wheel
+          pip install pyinstaller requests certifi
 
-      - name: Vérifier les fichiers nécessaires
-        shell: pwsh
+      - name: Compiler l'exécutable Windows avec PyInstaller
         run: |
-          if (-not (Test-Path "main.py")) {
-            throw "Le fichier main.py est introuvable."
-          }
+          pyinstaller --noconsole --onefile --name Gecorde-Windows main.py
 
-      - name: Compiler Gecorde en dossier
+      - name: Vérifier et préparer l'exécutable
+        shell: bash
         run: |
-          pyinstaller --noconfirm --clean --onedir --windowed --name Gecorde main.py
-
-      - name: Préparer le téléchargement Windows
-        shell: pwsh
-        run: |
-          if (-not (Test-Path "dist/Gecorde/Gecorde.exe")) {
-            throw "La compilation n'a pas produit Gecorde.exe."
-          }
-
-          New-Item -ItemType Directory -Force -Path release | Out-Null
-
-          Compress-Archive `
-            -Path "dist/Gecorde/*" `
-            -DestinationPath "release/Gecorde-Windows.zip" `
-            -Force
+          mkdir -p release
+          if [ ! -f "dist/Gecorde-Windows.exe" ]; then
+            echo "ERREUR : aucun exécutable Windows produit."
+            exit 1
+          fi
+          cp dist/Gecorde-Windows.exe release/Gecorde-Windows.exe
+          test -s release/Gecorde-Windows.exe
 
       - name: Publier la version Windows
         uses: actions/upload-artifact@v4
         with:
           name: Gecorde-Windows
-          path: release/Gecorde-Windows.zip
+          path: release/Gecorde-Windows.exe
           if-no-files-found: error
-
 
   # ==========================================
   # 2. LINUX - CONSERVÉ À L'IDENTIQUE
@@ -145,55 +145,76 @@ jobs:
   build-android:
     name: Construire Gecorde pour Android
     runs-on: ubuntu-22.04
-@@ -147,14 +157,14 @@
+
+    steps:
+      - name: Récupérer le code source
+        uses: actions/checkout@v4
+
+      - name: Vérifier la configuration Android
+        run: |
+          if [ ! -f buildozer.spec ]; then
             echo "ERREUR : buildozer.spec est introuvable."
             exit 1
           fi
-
           if [ ! -f main.py ]; then
             echo "ERREUR : main.py est introuvable."
             exit 1
           fi
 
-      - name: Installer les dépendances système
       - name: Installer les dépendances système et 32-bit libs
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
           sudo apt-get install -y \
             git zip unzip \
-@@ -170,14 +180,16 @@
+            openjdk-17-jdk \
+            python3-pip \
+            python3-venv \
+            autoconf \
+            libtool \
+            pkg-config \
+            zlib1g-dev \
+            libncurses5-dev \
+            libncursesw5-dev \
             libtinfo6 \
             cmake \
             libffi-dev \
-            libssl-dev
             libssl-dev \
             libc6:i386 libstdc++6:i386 zlib1g:i386
 
-      - name: Installer Buildozer
       - name: Installer Buildozer et dépendances Python
         run: |
           python3 -m venv .venv
           . .venv/bin/activate
           pip install --upgrade pip setuptools wheel
-          pip install buildozer cython==0.29.36
           pip install --upgrade cython
           pip install buildozer
 
       - name: Compiler l'APK avec journal détaillé
         shell: bash
-@@ -199,20 +211,17 @@
+        run: |
+          set -o pipefail
+          source .venv/bin/activate
+          buildozer -v android debug 2>&1 | tee android-build.log
+
+      - name: Publier le journal de compilation Android
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gecorde-Android-Logs
+          path: android-build.log
+          if-no-files-found: ignore
+
+      - name: Vérifier et préparer l'APK
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p release
-
           APK="$(find bin -maxdepth 1 -type f -name '*.apk' -print -quit)"
-
           if [ -z "$APK" ]; then
             echo "ERREUR : aucun APK produit."
             exit 1
           fi
-
           cp "$APK" release/Gecorde-Android.apk
           test -s release/Gecorde-Android.apk
 
