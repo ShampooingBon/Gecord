@@ -16,9 +16,7 @@ jobs:
   # ==========================================
   build-windows:
     name: Construire Gecorde pour Windows
-
-on:
-  push:
+push:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
@@ -134,15 +132,11 @@ jobs:
   # ==========================================
   build-android:
    name: Construire Gecorde pour Android
-
-on:
-  push:
+push:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
-
-jobs:
-  build-android:
+build-android:
     name: Construire Gecorde pour Android
     runs-on: ubuntu-22.04
 
