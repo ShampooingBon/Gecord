@@ -1,4 +1,5 @@
-name: Gecord - Windows
+```yaml
+name: Gecord - Android
 
 on:
   workflow_dispatch:
@@ -10,151 +11,209 @@ permissions:
   contents: read
 
 jobs:
-  build-windows:
-    name: Construire Gecord pour Windows
-    runs-on: windows-latest
-    timeout-minutes: 60
+  build-android:
+    name: Construire Gecord pour Android
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
 
     steps:
       - name: Récupérer le code source
         uses: actions/checkout@v4
 
-      - name: Vérifier le dépôt
-        shell: bash
-        run: |
-          echo "Contenu de la racine du dépôt :"
-          ls -la
-          test -f main.py || { echo "::error::main.py introuvable à la racine du dépôt."; exit 1; }
-
-      - name: Installer Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Installer les dépendances
-        shell: bash
-        run: |
-          python -m pip install --upgrade pip setuptools wheel
-          # Kivy + ses bibliothèques Windows (SDL2, GLEW, ANGLE)
-          pip install "kivy[base]" pyinstaller requests certifi
-          # Si le dépôt a un requirements.txt, on l'installe aussi.
-          if [ -f requirements.txt ]; then
-            echo "requirements.txt trouvé, installation..."
-            pip install -r requirements.txt
-          fi
-          pip list
-
-      - name: Générer le fichier de build PyInstaller
-        shell: bash
-        run: |
-          cat > gecord-windows.spec <<'SPEC'
-          # -*- mode: python ; coding: utf-8 -*-
-          import os
-
-          # Bibliothèques Windows de Kivy (selon la version de Kivy, elles peuvent être absentes).
-          try:
-              from kivy_deps import sdl2, glew
-              kivy_deps_trees = [Tree(p) for p in (sdl2.dep_bins + glew.dep_bins)]
-              try:
-                  from kivy_deps import angle
-                  kivy_deps_trees += [Tree(p) for p in angle.dep_bins]
-              except Exception:
-                  pass
-          except Exception:
-              kivy_deps_trees = []
-
-          # Fichiers du projet à embarquer (images, .kv, polices, json...), hors fichiers techniques.
-          EXCLUDE_DIRS = {'.git', '.github', 'build', 'dist', 'release', '.buildozer',
-                          'bin', '__pycache__', 'venv', '.venv', 'env'}
-          DATA_EXTS = {'.png', '.jpg', '.jpeg', '.gif', '.kv', '.atlas', '.json',
-                       '.txt', '.ttf', '.otf', '.wav', '.mp3', '.ogg', '.ico'}
-          datas = []
-          for root, dirs, files in os.walk('.'):
-              dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
-              for f in files:
-                  if os.path.splitext(f)[1].lower() in DATA_EXTS and f != 'requirements.txt':
-                      src = os.path.join(root, f)
-                      dest = os.path.normpath(root)
-                      datas.append((src, dest))
-
-          a = Analysis(
-              ['main.py'],
-              pathex=[],
-              binaries=[],
-              datas=datas,
-              hiddenimports=['requests', 'certifi'],
-              hookspath=[],
-              runtime_hooks=[],
-              excludes=[],
-              noarchive=False,
-          )
-          pyz = PYZ(a.pure)
-
-          exe = EXE(
-              pyz,
-              a.scripts,
-              a.binaries,
-              a.datas,
-              *kivy_deps_trees,
-              [],
-              name='Gecord',
-              debug=False,
-              strip=False,
-              upx=False,
-              console=False,
-              icon=None,
-          )
-          SPEC
-          echo "--- gecord-windows.spec ---"
-          cat gecord-windows.spec
-
-      - name: Compiler l'exécutable avec journal détaillé
-        shell: bash
-        # Si ça dépasse 20 minutes, l'étape s'arrête toute seule et le journal reste consultable.
-        timeout-minutes: 20
-        env:
-          # Affiche les lignes tout de suite (sinon elles peuvent rester bloquées en mémoire).
-          PYTHONUNBUFFERED: "1"
-          # Empêche Kivy de lire les arguments de la ligne de commande de PyInstaller.
-          KIVY_NO_ARGS: "1"
-          KIVY_NO_FILELOG: "1"
-        run: |
-          set -o pipefail
-          pyinstaller --noconfirm --clean --log-level DEBUG gecord-windows.spec 2>&1 | tee windows-build.log
-
-      - name: Afficher la fin du journal en cas d'échec
-        if: failure() || cancelled()
-        shell: bash
-        run: |
-          if [ ! -f windows-build.log ]; then
-            echo "::warning::Pas de journal de compilation : l'échec vient d'une étape AVANT la compilation. Ouvre l'étape en rouge plus haut dans la liste."
-            exit 0
-          fi
-          echo "===== 120 dernières lignes ====="
-          tail -n 120 windows-build.log || true
-          echo "===== Lignes contenant une erreur ====="
-          grep -n -i -E 'error|failed|traceback|exception|not found' windows-build.log | tail -n 30 || true
-
-      - name: Publier le journal Windows
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gecord-Windows-Logs
-          path: windows-build.log
-          if-no-files-found: ignore
-
-      - name: Vérifier et préparer l'exécutable
+      - name: Préparer la configuration Android
         shell: bash
         run: |
           set -euo pipefail
-          test -s dist/Gecord.exe || { echo "ERREUR : dist/Gecord.exe n'a pas été produit."; ls -la dist || true; exit 1; }
-          mkdir -p release
-          cp dist/Gecord.exe release/Gecord-Windows.exe
-          ls -la release
 
-      - name: Publier la version Windows
+          echo "Contenu de la racine du dépôt :"
+          ls -la
+
+          test -f main.py || {
+            echo "::error::main.py introuvable à la racine du dépôt."
+            exit 1
+          }
+
+          if [ ! -f buildozer.spec ]; then
+            echo "::warning::buildozer.spec introuvable : génération d'un fichier par défaut."
+
+            cat > buildozer.spec <<'SPEC'
+          [app]
+          title = Gecord
+          package.name = gecord
+          package.domain = org.shampooingbon
+          source.dir = .
+          source.include_exts = py,png,jpg,kv,atlas,json,txt,ttf
+          source.exclude_dirs = .git,.github,bin,release,.buildozer
+          version = 0.1
+          requirements = python3,kivy,requests,urllib3,idna,charset-normalizer,certifi
+          orientation = portrait
+          fullscreen = 0
+          android.permissions = INTERNET
+          android.api = 33
+          android.minapi = 21
+          android.archs = arm64-v8a
+          android.accept_sdk_license = True
+          p4a.branch = develop
+
+          [buildozer]
+          log_level = 2
+          warn_on_root = 1
+          SPEC
+          fi
+
+          grep -q '^\[app\]' buildozer.spec || {
+            echo "::error::buildozer.spec ne contient pas de section [app]."
+            exit 1
+          }
+
+          # Accepter la licence Android sans modifier le fichier du dépôt.
+          sed -i '/^[[:space:]]*#\{0,1\}[[:space:]]*android\.accept_sdk_license[[:space:]]*=/d' buildozer.spec
+          sed -i '0,/^\[app\]/s//[app]\nandroid.accept_sdk_license = True/' buildozer.spec
+
+          ensure_key() {
+            key="$1"
+            value="$2"
+
+            if ! grep -Eq "^[[:space:]]*${key//./\\.}[[:space:]]*=" buildozer.spec; then
+              echo "::notice::Ajout de '$key = $value' pour cette compilation."
+              sed -i "0,/^\[app\]/s//[app]\n$key = $value/" buildozer.spec
+            fi
+          }
+
+          ensure_key title Gecord
+          ensure_key package.name gecord
+          ensure_key package.domain org.shampooingbon
+          ensure_key source.dir .
+          ensure_key version 0.1
+          ensure_key android.archs arm64-v8a
+          ensure_key android.build_tools_version 34.0.0
+          ensure_key p4a.branch develop
+
+          # Requests et ses dépendances.
+          REQ="$(grep -E '^[[:space:]]*requirements[[:space:]]*=' buildozer.spec || true)"
+          echo "Requirements détectés : $REQ"
+
+          if echo "$REQ" | grep -qi 'requests'; then
+            for dep in urllib3 idna certifi; do
+              if ! echo "$REQ" | grep -qi "$dep"; then
+                echo "::notice::Ajout de $dep aux requirements Android."
+                sed -i -E "/^[[:space:]]*requirements[[:space:]]*=/ s/$/,$dep/" buildozer.spec
+              fi
+            done
+
+            # Chardet est une alternative Python pur pour l'encodage utilisé par requests.
+            if ! grep -E '^[[:space:]]*requirements[[:space:]]*=' buildozer.spec | grep -qi 'chardet'; then
+              sed -i -E '/^[[:space:]]*requirements[[:space:]]*=/ s/$/,chardet==5.2.0/' buildozer.spec
+            fi
+
+            sed -i -E '/^[[:space:]]*requirements[[:space:]]*=/ s/charset-normalizer(==[0-9.]+)?/chardet==5.2.0/' buildozer.spec
+          fi
+
+          echo "--- buildozer.spec utilisé ---"
+          cat buildozer.spec
+
+      - name: Installer Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Installer les dépendances système
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            git zip unzip \
+            build-essential \
+            python3-pip python3-venv \
+            autoconf automake libtool libltdl-dev pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev \
+            libtinfo6 cmake libffi-dev libssl-dev
+
+      - name: Restaurer le cache Buildozer
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            .buildozer
+          key: buildozer-android-v3-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            buildozer-android-v3-${{ runner.os }}-
+
+      - name: Installer Buildozer et ses dépendances
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 -m venv "$HOME/venv-buildozer"
+          source "$HOME/venv-buildozer/bin/activate"
+
+          python -m pip install --upgrade pip wheel "setuptools<81"
+          python -m pip install \
+            Cython==0.29.36 \
+            buildozer \
+            sh appdirs colorama jinja2 \
+            build toml packaging virtualenv \
+            pyproject-hooks
+
+          python -c "import sh, appdirs, colorama, jinja2, build, pyproject_hooks; print('Dépendances hôte OK')"
+          buildozer --version
+
+      - name: Compiler l'APK avec journal détaillé
+        shell: bash
+        run: |
+          set -o pipefail
+          source "$HOME/venv-buildozer/bin/activate"
+
+          buildozer -v android debug 2>&1 | tee android-build.log
+
+      - name: Afficher les erreurs de compilation
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f android-build.log ]; then
+            echo "===== Dernières lignes du journal Android ====="
+            tail -n 160 android-build.log || true
+
+            echo "===== Erreurs repérées ====="
+            grep -n -i -E \
+              'error|failed|traceback|exception|not found|no matching distribution' \
+              android-build.log | tail -n 60 || true
+          fi
+
+      - name: Publier le journal Android
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gecord-Windows
-          path: release/Gecord-Windows.exe
+          name: Gecord-Android-Logs
+          path: android-build.log
+          if-no-files-found: ignore
+
+      - name: Vérifier et préparer l'APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p release
+
+          APK="$(find bin -maxdepth 1 -type f -name '*.apk' -print -quit)"
+
+          if [ -z "$APK" ]; then
+            echo "::error::Aucun APK n'a été produit."
+            exit 1
+          fi
+
+          cp "$APK" release/Gecord-Android.apk
+          test -s release/Gecord-Android.apk
+
+          echo "APK créé : release/Gecord-Android.apk"
+          ls -lh release/Gecord-Android.apk
+
+      - name: Publier la version Android
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gecord-Android
+          path: release/Gecord-Android.apk
           if-no-files-found: error
+```
