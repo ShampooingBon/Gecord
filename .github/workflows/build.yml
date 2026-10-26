@@ -114,6 +114,13 @@ jobs:
           source "$HOME/venv-buildozer/bin/activate"
           buildozer -v android debug 2>&1 | tee android-build.log
 
+      - name: Afficher la fin du journal en cas d'échec
+        if: failure()
+        shell: bash
+        run: |
+          echo "===== 80 dernières lignes du journal Android ====="
+          tail -n 80 android-build.log || true
+
       - name: Publier le journal Android
         if: always()
         uses: actions/upload-artifact@v4
