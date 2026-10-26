@@ -70,8 +70,8 @@ jobs:
   # 2. LINUX - CONSERVÉ À L'IDENTIQUE
   # ==========================================
   build-linux:
-    name: Construire Gecorde pour Linux
-    runs-on: ubuntu-22.04
+   name: Construire Gecorde pour Linux
+     runs-on: ubuntu-22.04
 
     steps:
       - name: Récupérer le code source
@@ -134,7 +134,7 @@ jobs:
   # 3. ANDROID - COMPILATION ET DIAGNOSTIC
   # ==========================================
   build-android:
-  name: Construire Gecorde pour Android
+   name: Construire Gecorde pour Android
 
 on:
   push:
