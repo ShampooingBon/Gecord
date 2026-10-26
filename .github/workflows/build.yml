@@ -137,6 +137,11 @@ jobs:
 
       - name: Compiler l'APK avec journal détaillé
         shell: bash
+        env:
+          # requests réinstalle charset-normalizer tout seul (dépendance), dont la roue Android est refusée
+          # ("not a supported wheel on this platform"). On désactive l'installation automatique des
+          # dépendances : toutes celles dont on a besoin sont déjà listées dans requirements.
+          PIP_NO_DEPS: "1"
         run: |
           set -o pipefail
           source "$HOME/venv-buildozer/bin/activate"
