@@ -103,3 +103,72 @@ jobs:
           sudo apt-get install -y \
             git zip unzip \
             build-essential \
+            python3-pip python3-venv \
+            autoconf automake libtool libltdl-dev pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev \
+            libtinfo6 cmake libffi-dev libssl-dev
+
+      - name: Restaurer le cache Buildozer
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            .buildozer
+          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            buildozer-${{ runner.os }}-
+
+      - name: Installer Buildozer
+        run: |
+          # L'environnement Python est créé hors du dépôt pour ne pas être embarqué dans l'APK.
+          python3 -m venv "$HOME/venv-buildozer"
+          . "$HOME/venv-buildozer/bin/activate"
+          pip install --upgrade pip setuptools wheel
+          pip install Cython==0.29.36 buildozer
+
+      - name: Compiler l'APK avec journal détaillé
+        shell: bash
+        run: |
+          set -o pipefail
+          source "$HOME/venv-buildozer/bin/activate"
+          buildozer -v android debug 2>&1 | tee android-build.log
+
+      - name: Afficher la fin du journal en cas d'échec
+        if: failure()
+        shell: bash
+        run: |
+          # Le journal se termine par un long récapitulatif de variables ; l'erreur réelle est juste avant.
+          awk 'tolower($0) ~ /^# *environment/ {exit} {print}' android-build.log > android-before-env.log || true
+          echo "===== 120 dernières lignes avant le récapitulatif ====="
+          tail -n 120 android-before-env.log || true
+          echo "===== Lignes contenant une erreur ====="
+          grep -n -i -E 'error|failed|traceback|exception|not found' android-before-env.log | tail -n 30 || true
+
+      - name: Publier le journal Android
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gecord-Android-Logs
+          path: android-build.log
+          if-no-files-found: ignore
+
+      - name: Vérifier et préparer l'APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          APK="$(find bin -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          if [ -z "$APK" ]; then
+            echo "ERREUR : aucun APK produit."
+            exit 1
+          fi
+          cp "$APK" release/Gecord-Android.apk
+          test -s release/Gecord-Android.apk
+
+      - name: Publier la version Android
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gecord-Android
+          path: release/Gecord-Android.apk
+          if-no-files-found: error
+          
