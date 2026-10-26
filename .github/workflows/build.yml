@@ -169,19 +169,22 @@ jobs:
   # 4. IOS
   # ==========================================
   build-ios:
-    name: Préparer Gecorde pour iOS
+    name: Construire Gecorde pour iPhone et iPad
     runs-on: macos-15
-    if: false
 
     steps:
       - name: Récupérer le code source
         uses: actions/checkout@v4
 
-      - name: Vérifier l'environnement Apple
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Vérifier Xcode
         run: |
           xcodebuild -version
-          xcrun --version
 
-      # La compilation iOS nécessite un projet Kivy-iOS
-      # correctement configuré, ainsi que la signature Apple.
-      # Ce travail sera activé lorsque cette configuration existera.
+      # La compilation réelle sera ajoutée lorsque
+      # la configuration Kivy-iOS et la signature Apple
+      # seront prêtes.
