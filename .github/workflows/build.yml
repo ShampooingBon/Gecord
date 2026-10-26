@@ -75,6 +75,8 @@ jobs:
           ensure_key version 0.1
           # Un seul processeur (64 bits, tous les téléphones récents) : build plus court et moins de risques d'erreur.
           ensure_key android.archs arm64-v8a
+          # Version fixe des build-tools : évite que le SDK télécharge la dernière (37), non testée avec p4a.
+          ensure_key android.build_tools_version 34.0.0
 
           REQ="$(grep -E '^[[:space:]]*requirements[[:space:]]*=' buildozer.spec || true)"
           echo "Requirements détectés : $REQ"
@@ -123,17 +125,21 @@ jobs:
           path: |
             ~/.buildozer
             .buildozer
-          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          # "v2" : change ce numéro pour forcer un cache tout neuf si besoin.
+          key: buildozer-v2-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-${{ runner.os }}-
+            buildozer-v2-${{ runner.os }}-
 
       - name: Installer Buildozer
         run: |
           # L'environnement Python est créé hors du dépôt pour ne pas être embarqué dans l'APK.
           python3 -m venv "$HOME/venv-buildozer"
           . "$HOME/venv-buildozer/bin/activate"
-          pip install --upgrade pip setuptools wheel
+          pip install --upgrade pip wheel "setuptools<81"
           pip install Cython==0.29.36 buildozer
+          # Dépendances de python-for-android : à installer ICI, car PIP_NO_DEPS
+          # est actif à l'étape suivante et empêcherait leur installation.
+          pip install sh appdirs colorama jinja2 build toml packaging virtualenv
 
       - name: Compiler l'APK avec journal détaillé
         shell: bash
@@ -145,6 +151,8 @@ jobs:
         run: |
           set -o pipefail
           source "$HOME/venv-buildozer/bin/activate"
+          # Vérification : les dépendances de python-for-android sont bien présentes.
+          python -c "import sh, appdirs, colorama, jinja2; print('deps OK')"
           buildozer -v android debug 2>&1 | tee android-build.log
 
       - name: Afficher la fin du journal en cas d'échec
@@ -152,7 +160,9 @@ jobs:
         shell: bash
         run: |
           # Le journal se termine par un long récapitulatif de variables ; l'erreur réelle est juste avant.
-          awk 'tolower($0) ~ /^# *environment/ {exit} {print}' android-build.log > android-before-env.log || true
+          # On ignore aussi les barres de progression et la liste des images système du SDK.
+          awk 'tolower($0) ~ /^# *environment/ {exit} {print}' android-build.log \
+            | grep -v -E '^\[[ =]*\]|system-images;' > android-before-env.log || true
           echo "===== 120 dernières lignes avant le récapitulatif ====="
           tail -n 120 android-before-env.log || true
           echo "===== Lignes contenant une erreur ====="
