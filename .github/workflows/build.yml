@@ -110,12 +110,20 @@ jobs:
 
       - name: Compiler l'exécutable avec journal détaillé
         shell: bash
+        # Si ça dépasse 20 minutes, l'étape s'arrête toute seule et le journal reste consultable.
+        timeout-minutes: 20
+        env:
+          # Affiche les lignes tout de suite (sinon elles peuvent rester bloquées en mémoire).
+          PYTHONUNBUFFERED: "1"
+          # Empêche Kivy de lire les arguments de la ligne de commande de PyInstaller.
+          KIVY_NO_ARGS: "1"
+          KIVY_NO_FILELOG: "1"
         run: |
           set -o pipefail
-          pyinstaller --noconfirm --clean gecord-windows.spec 2>&1 | tee windows-build.log
+          pyinstaller --noconfirm --clean --log-level DEBUG gecord-windows.spec 2>&1 | tee windows-build.log
 
       - name: Afficher la fin du journal en cas d'échec
-        if: failure()
+        if: failure() || cancelled()
         shell: bash
         run: |
           if [ ! -f windows-build.log ]; then
