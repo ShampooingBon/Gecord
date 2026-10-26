@@ -1,5 +1,4 @@
-
-name: Gecorde - Compilation multiplateforme
+name: Gecord - Compilation multiplateforme
 
 on:
   workflow_dispatch:
@@ -15,7 +14,7 @@ jobs:
   # 1. WINDOWS
   # ==========================================
   build-windows:
-    name: Construire Gecorde pour Windows
+    name: Construire Gecord pour Windows
     runs-on: windows-latest
 
     steps:
@@ -34,32 +33,32 @@ jobs:
 
       - name: Compiler l'exécutable Windows
         run: |
-          pyinstaller --noconfirm --clean --noconsole --onefile --name Gecorde-Windows main.py
+          pyinstaller --noconfirm --clean --noconsole --onefile --name Gecord-Windows main.py
 
       - name: Vérifier et préparer l'exécutable
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release | Out-Null
-          if (!(Test-Path "dist/Gecorde-Windows.exe")) {
+          if (!(Test-Path "dist/Gecord-Windows.exe")) {
             throw "ERREUR : aucun exécutable Windows produit."
           }
-          Copy-Item "dist/Gecorde-Windows.exe" "release/Gecorde-Windows.exe"
-          if ((Get-Item "release/Gecorde-Windows.exe").Length -le 0) {
+          Copy-Item "dist/Gecord-Windows.exe" "release/Gecord-Windows.exe"
+          if ((Get-Item "release/Gecord-Windows.exe").Length -le 0) {
             throw "ERREUR : le fichier EXE est vide."
           }
 
       - name: Publier la version Windows
         uses: actions/upload-artifact@v4
         with:
-          name: Gecorde-Windows
-          path: release/Gecorde-Windows.exe
+          name: Gecord-Windows
+          path: release/Gecord-Windows.exe
           if-no-files-found: error
 
   # ==========================================
-  # 2. LINUX - CONSERVÉ
+  # 2. LINUX - NE RIEN MODIFIER
   # ==========================================
   build-linux:
-    name: Construire Gecorde pour Linux
+    name: Construire Gecord pour Linux
     runs-on: ubuntu-22.04
 
     steps:
@@ -99,51 +98,84 @@ jobs:
           python -m pip install --upgrade pip
           pip install kivy requests pyinstaller
 
-      - name: Compiler Gecorde
+      - name: Compiler Gecord
         run: |
-          pyinstaller --noconfirm --clean --onefile --name Gecorde main.py
+          pyinstaller --noconfirm --clean --onefile --name Gecord main.py
 
       - name: Préparer le téléchargement Linux
         run: |
           mkdir -p release
-          cp dist/Gecorde release/Gecorde-Linux
-          chmod +x release/Gecorde-Linux
+          cp dist/Gecord release/Gecord-Linux
+          chmod +x release/Gecord-Linux
           cd release
-          tar -czf Gecorde-Linux.tar.gz Gecorde-Linux
+          tar -czf Gecord-Linux.tar.gz Gecord-Linux
 
       - name: Publier la version Linux
         uses: actions/upload-artifact@v4
         with:
-          name: Gecorde-Linux
-          path: release/Gecorde-Linux.tar.gz
+          name: Gecord-Linux
+          path: release/Gecord-Linux.tar.gz
           if-no-files-found: error
 
   # ==========================================
   # 3. ANDROID
   # ==========================================
   build-android:
-    name: Construire Gecorde pour Android
+    name: Construire Gecord pour Android
     runs-on: ubuntu-22.04
+    timeout-minutes: 120
 
     steps:
       - name: Récupérer le code source
         uses: actions/checkout@v4
 
       - name: Vérifier la configuration Android
+        shell: bash
         run: |
           test -f buildozer.spec || { echo "ERREUR : buildozer.spec introuvable."; exit 1; }
           test -f main.py || { echo "ERREUR : main.py introuvable."; exit 1; }
+
+          # Sans cette ligne, Buildozer attend une réponse interactive pour la licence du SDK
+          # Android et la compilation reste bloquée sur GitHub Actions.
+          if ! grep -Eqi '^[[:space:]]*android\.accept_sdk_license[[:space:]]*=[[:space:]]*True' buildozer.spec; then
+            echo "::error::buildozer.spec doit contenir 'android.accept_sdk_license = True'."
+            exit 1
+          fi
+
+          REQ="$(grep -E '^[[:space:]]*requirements[[:space:]]*=' buildozer.spec || true)"
+          echo "Requirements détectés : $REQ"
+          if echo "$REQ" | grep -qi 'requests'; then
+            for dep in urllib3 idna charset-normalizer certifi; do
+              echo "$REQ" | grep -qi "$dep" || echo "::warning::'requests' est utilisé mais '$dep' n'est pas dans requirements (risque de crash au lancement de l'APK)."
+            done
+          fi
+
+      - name: Installer Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
 
       - name: Installer les dépendances système
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             git zip unzip \
-            openjdk-17-jdk \
+            build-essential \
             python3-pip python3-venv \
-            autoconf libtool pkg-config \
+            autoconf automake libtool libltdl-dev pkg-config \
             zlib1g-dev libncurses5-dev libncursesw5-dev \
             libtinfo6 cmake libffi-dev libssl-dev
+
+      - name: Restaurer le cache Buildozer
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            .buildozer
+          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            buildozer-${{ runner.os }}-
 
       - name: Installer Buildozer
         run: |
@@ -163,7 +195,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gecorde-Android-Logs
+          name: Gecord-Android-Logs
           path: android-build.log
           if-no-files-found: ignore
 
@@ -177,12 +209,12 @@ jobs:
             echo "ERREUR : aucun APK produit."
             exit 1
           fi
-          cp "$APK" release/Gecorde-Android.apk
-          test -s release/Gecorde-Android.apk
+          cp "$APK" release/Gecord-Android.apk
+          test -s release/Gecord-Android.apk
 
       - name: Publier la version Android
         uses: actions/upload-artifact@v4
         with:
-          name: Gecorde-Android
-          path: release/Gecorde-Android.apk
+          name: Gecord-Android
+          path: release/Gecord-Android.apk
           if-no-files-found: error
