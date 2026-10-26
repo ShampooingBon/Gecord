@@ -30,7 +30,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
 
       - name: Installer les dépendances
         shell: bash
@@ -119,6 +118,10 @@ jobs:
         if: failure()
         shell: bash
         run: |
+          if [ ! -f windows-build.log ]; then
+            echo "::warning::Pas de journal de compilation : l'échec vient d'une étape AVANT la compilation. Ouvre l'étape en rouge plus haut dans la liste."
+            exit 0
+          fi
           echo "===== 120 dernières lignes ====="
           tail -n 120 windows-build.log || true
           echo "===== Lignes contenant une erreur ====="
