@@ -133,7 +133,7 @@ jobs:
   build-android:
    name: Construire Gecorde pour Android
 push:
-    branches: [ main, master ]
+  branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
 build-android:
