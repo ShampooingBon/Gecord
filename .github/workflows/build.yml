@@ -80,7 +80,7 @@ jobs:
           echo "Requirements détectés : $REQ"
           echo "$REQ" | grep -qi 'kivy' || echo "::warning::'kivy' n'apparaît pas dans requirements."
           if echo "$REQ" | grep -qi 'requests'; then
-            for dep in urllib3 idna charset-normalizer certifi; do
+            for dep in urllib3 idna certifi; do
               if ! echo "$REQ" | grep -qi "$dep"; then
                 echo "::warning::'requests' est utilisé mais '$dep' manque dans requirements : ajouté pour cette compilation (sinon l'APK plante au lancement). Ajoute-le dans ton fichier."
                 sed -i -E "s/^([[:space:]]*requirements[[:space:]]*=.*)$/\1,$dep/" buildozer.spec
@@ -88,9 +88,14 @@ jobs:
             done
           fi
 
-          # charset-normalizer : sa dernière version publie une roue Android que l'outil de compilation
-          # refuse ("not a supported wheel on this platform"). On épingle une version sans roue Android.
-          sed -i -E '/^[[:space:]]*requirements[[:space:]]*=/ s/(^|[,=[:space:]])charset-normalizer([,[:space:]]|$)/\1charset-normalizer==3.4.4\2/' buildozer.spec
+          # charset-normalizer publie des roues Android que l'outil de compilation refuse
+          # ("not a supported wheel on this platform"). On le remplace par chardet (Python pur,
+          # sans roue Android), que requests accepte à la place.
+          sed -i -E '/^[[:space:]]*requirements[[:space:]]*=/ s/charset-normalizer(==[0-9.]+)?/chardet==5.2.0/' buildozer.spec
+          REQ2="$(grep -E '^[[:space:]]*requirements[[:space:]]*=' buildozer.spec || true)"
+          if echo "$REQ2" | grep -qi 'requests' && ! echo "$REQ2" | grep -qi 'chardet'; then
+            sed -i -E '/^[[:space:]]*requirements[[:space:]]*=/ s/$/,chardet==5.2.0/' buildozer.spec
+          fi
 
           echo "--- buildozer.spec utilisé ---"
           cat buildozer.spec
@@ -135,26 +140,14 @@ jobs:
         run: |
           set -o pipefail
           source "$HOME/venv-buildozer/bin/activate"
-          if buildozer -v android debug 2>&1 | tee android-build.log; then
-            exit 0
-          fi
-          if grep -q "is not a supported wheel on this platform" android-build.log; then
-            echo "::warning::Roue Android incompatible : nouvel essai avec chardet à la place de charset-normalizer."
-            sed -i -E '/^[[:space:]]*requirements[[:space:]]*=/ s/charset-normalizer(==[0-9.]+)?/chardet==5.2.0/' buildozer.spec
-            grep -E '^[[:space:]]*requirements' buildozer.spec
-            buildozer -v android debug 2>&1 | tee android-build-2.log
-          else
-            exit 1
-          fi
+          buildozer -v android debug 2>&1 | tee android-build.log
 
       - name: Afficher la fin du journal en cas d'échec
         if: failure()
         shell: bash
         run: |
           # Le journal se termine par un long récapitulatif de variables ; l'erreur réelle est juste avant.
-          LOG=android-build.log
-          [ -f android-build-2.log ] && LOG=android-build-2.log
-          awk 'tolower($0) ~ /^# *environment/ {exit} {print}' "$LOG" > android-before-env.log || true
+          awk 'tolower($0) ~ /^# *environment/ {exit} {print}' android-build.log > android-before-env.log || true
           echo "===== 120 dernières lignes avant le récapitulatif ====="
           tail -n 120 android-before-env.log || true
           echo "===== Lignes contenant une erreur ====="
@@ -165,9 +158,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Gecord-Android-Logs
-          path: |
-            android-build.log
-            android-build-2.log
+          path: android-build.log
           if-no-files-found: ignore
 
       - name: Vérifier et préparer l'APK
