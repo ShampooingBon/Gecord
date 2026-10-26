@@ -22,6 +22,8 @@ jobs:
       - name: Préparer la configuration Android
         shell: bash
         run: |
+          set -euo pipefail
+
           echo "Contenu de la racine du dépôt :"
           ls -la
 
@@ -38,7 +40,7 @@ jobs:
           source.include_exts = py,png,jpg,kv,atlas,json,txt,ttf
           source.exclude_dirs = .git,.github,bin,release,.buildozer
           version = 0.1
-          requirements = python3,kivy,requests,urllib3,idna,charset-normalizer,certifi
+          requirements = python3,kivy,requests,urllib3,idna,charset-normalizer,certifi,pyjnius==1.9.0
           orientation = portrait
           fullscreen = 0
           android.permissions = INTERNET
@@ -80,6 +82,16 @@ jobs:
 
           REQ="$(grep -E '^[[:space:]]*requirements[[:space:]]*=' buildozer.spec || true)"
           echo "Requirements détectés : $REQ"
+
+          # pyjnius 1.7.0 n'existe pas dans les binaires publiés ; on force la version réellement disponible.
+          # Cela évite l'échec de pip3 install pyjnius==1.7.0 observé dans le log.
+          if ! echo "$REQ" | grep -qi 'pyjnius'; then
+            echo "::warning::'pyjnius' n'apparaît pas dans requirements. Ajout pour cette compilation avec une version compatible."
+            sed -i -E '/^[[:space:]]*requirements[[:space:]]*=/ s/$/,pyjnius==1.9.0/' buildozer.spec
+          else
+            sed -i -E '/^[[:space:]]*requirements[[:space:]]*=/ s/pyjnius==[0-9.]+/pyjnius==1.9.0/' buildozer.spec
+          fi
+
           echo "$REQ" | grep -qi 'kivy' || echo "::warning::'kivy' n'apparaît pas dans requirements."
           if echo "$REQ" | grep -qi 'requests'; then
             for dep in urllib3 idna certifi; do
@@ -125,10 +137,10 @@ jobs:
           path: |
             ~/.buildozer
             .buildozer
-          # "v2" : change ce numéro pour forcer un cache tout neuf si besoin.
-          key: buildozer-v2-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          # "v3" : change ce numéro pour forcer un cache tout neuf si besoin.
+          key: buildozer-v3-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-v2-${{ runner.os }}-
+            buildozer-v3-${{ runner.os }}-
 
       - name: Installer Buildozer
         run: |
@@ -136,9 +148,9 @@ jobs:
           python3 -m venv "$HOME/venv-buildozer"
           . "$HOME/venv-buildozer/bin/activate"
           pip install --upgrade pip wheel "setuptools<81"
-          pip install Cython==0.29.36 buildozer
-          # Dépendances de python-for-android : à installer ICI, car PIP_NO_DEPS
-          # est actif à l'étape suivante et empêcherait leur installation.
+          # pyproject-hooks est requis par le backend build de python-for-android pour compiler des wheels.
+          # Sans lui, l'import de pyproject_hooks échoue exactement comme dans le log fourni.
+          pip install "Cython==0.29.36" "buildozer" "pyproject-hooks>=1.2.0"
           pip install sh appdirs colorama jinja2 build toml packaging virtualenv
 
       - name: Compiler l'APK avec journal détaillé
@@ -151,8 +163,21 @@ jobs:
         run: |
           set -o pipefail
           source "$HOME/venv-buildozer/bin/activate"
+
           # Vérification : les dépendances de python-for-android sont bien présentes.
-          python -c "import sh, appdirs, colorama, jinja2; print('deps OK')"
+          python -c "import sh, appdirs, colorama, jinja2, pyproject_hooks; print('deps OK')"
+
+          # Vérification explicite de la compatibilité de la version de pyjnius.
+          python - <<'PY'
+          import sys
+          print("Python:", sys.version)
+          try:
+              import pyjnius
+              print("pyjnius:", pyjnius.__version__)
+          except Exception as e:
+              print("pyjnius non installé dans l'environnement du build (normal tant que p4a ne lance pas le recipe) :", e)
+          PY
+
           buildozer -v android debug 2>&1 | tee android-build.log
 
       - name: Afficher la fin du journal en cas d'échec
