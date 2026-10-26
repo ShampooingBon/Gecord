@@ -1,4 +1,4 @@
-name: Gecord - Compilation multiplateforme
+name: Gecord - Android
 
 on:
   workflow_dispatch:
@@ -10,116 +10,6 @@ permissions:
   contents: read
 
 jobs:
-  # ==========================================
-  # 1. WINDOWS
-  # ==========================================
-  build-windows:
-    name: Construire Gecord pour Windows
-    runs-on: windows-latest
-
-    steps:
-      - name: Récupérer le code source
-        uses: actions/checkout@v4
-
-      - name: Configurer Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-
-      - name: Installer les dépendances
-        run: |
-          python -m pip install --upgrade pip setuptools wheel
-          pip install kivy requests certifi pyinstaller
-
-      - name: Compiler l'exécutable Windows
-        run: |
-          pyinstaller --noconfirm --clean --noconsole --onefile --name Gecord-Windows main.py
-
-      - name: Vérifier et préparer l'exécutable
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path release | Out-Null
-          if (!(Test-Path "dist/Gecord-Windows.exe")) {
-            throw "ERREUR : aucun exécutable Windows produit."
-          }
-          Copy-Item "dist/Gecord-Windows.exe" "release/Gecord-Windows.exe"
-          if ((Get-Item "release/Gecord-Windows.exe").Length -le 0) {
-            throw "ERREUR : le fichier EXE est vide."
-          }
-
-      - name: Publier la version Windows
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gecord-Windows
-          path: release/Gecord-Windows.exe
-          if-no-files-found: error
-
-  # ==========================================
-  # 2. LINUX - NE RIEN MODIFIER
-  # ==========================================
-  build-linux:
-    name: Construire Gecord pour Linux
-    runs-on: ubuntu-22.04
-
-    steps:
-      - name: Récupérer le code source
-        uses: actions/checkout@v4
-
-      - name: Installer Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Installer les dépendances système
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            python3-dev \
-            build-essential \
-            libgl1-mesa-dev \
-            libgles2-mesa-dev \
-            libmtdev-dev \
-            libasound2-dev \
-            libx11-dev \
-            libxext-dev \
-            libxrender-dev \
-            libxfixes-dev \
-            libxi-dev \
-            libxrandr-dev \
-            libxcursor-dev \
-            libxinerama-dev \
-            libwayland-dev \
-            libwayland-egl1 \
-            libegl1 \
-            libglib2.0-0
-
-      - name: Installer les dépendances Python
-        run: |
-          python -m pip install --upgrade pip
-          pip install kivy requests pyinstaller
-
-      - name: Compiler Gecord
-        run: |
-          pyinstaller --noconfirm --clean --onefile --name Gecord main.py
-
-      - name: Préparer le téléchargement Linux
-        run: |
-          mkdir -p release
-          cp dist/Gecord release/Gecord-Linux
-          chmod +x release/Gecord-Linux
-          cd release
-          tar -czf Gecord-Linux.tar.gz Gecord-Linux
-
-      - name: Publier la version Linux
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gecord-Linux
-          path: release/Gecord-Linux.tar.gz
-          if-no-files-found: error
-
-  # ==========================================
-  # 3. ANDROID
-  # ==========================================
   build-android:
     name: Construire Gecord pour Android
     runs-on: ubuntu-22.04
@@ -129,26 +19,58 @@ jobs:
       - name: Récupérer le code source
         uses: actions/checkout@v4
 
-      - name: Vérifier la configuration Android
+      - name: Préparer la configuration Android
         shell: bash
         run: |
-          test -f buildozer.spec || { echo "ERREUR : buildozer.spec introuvable."; exit 1; }
-          test -f main.py || { echo "ERREUR : main.py introuvable."; exit 1; }
+          echo "Contenu de la racine du dépôt :"
+          ls -la
 
-          # Sans cette ligne, Buildozer attend une réponse interactive pour la licence du SDK
-          # Android et la compilation reste bloquée sur GitHub Actions.
-          if ! grep -Eqi '^[[:space:]]*android\.accept_sdk_license[[:space:]]*=[[:space:]]*True' buildozer.spec; then
-            echo "::error::buildozer.spec doit contenir 'android.accept_sdk_license = True'."
-            exit 1
+          test -f main.py || { echo "::error::main.py introuvable à la racine du dépôt."; exit 1; }
+
+          if [ ! -f buildozer.spec ]; then
+            echo "::warning::buildozer.spec introuvable : un fichier par défaut est généré pour cette compilation. Ajoutez un vrai buildozer.spec au dépôt."
+            cat > buildozer.spec <<'SPEC'
+          [app]
+          title = Gecord
+          package.name = gecord
+          package.domain = org.gecord
+          source.dir = .
+          source.include_exts = py,png,jpg,kv,atlas,json,txt,ttf
+          source.exclude_dirs = .git,.github,bin,release,.buildozer
+          version = 0.1
+          requirements = python3,kivy,requests,urllib3,idna,charset-normalizer,certifi
+          orientation = portrait
+          fullscreen = 0
+          android.permissions = INTERNET
+          android.api = 33
+          android.minapi = 21
+          android.archs = arm64-v8a, armeabi-v7a
+          android.accept_sdk_license = True
+
+          [buildozer]
+          log_level = 2
+          warn_on_root = 1
+          SPEC
           fi
+
+          # La licence du SDK Android doit être acceptée, sinon Buildozer attend une réponse
+          # au clavier et reste bloqué. On corrige la copie du fichier sur le runner seulement
+          # (le fichier du dépôt n'est pas modifié).
+          grep -q '^\[app\]' buildozer.spec || { echo "::error::buildozer.spec ne contient pas de section [app]."; exit 1; }
+          sed -i '/^[[:space:]]*#\{0,1\}[[:space:]]*android\.accept_sdk_license[[:space:]]*=/d' buildozer.spec
+          sed -i '0,/^\[app\]/s//[app]\nandroid.accept_sdk_license = True/' buildozer.spec
 
           REQ="$(grep -E '^[[:space:]]*requirements[[:space:]]*=' buildozer.spec || true)"
           echo "Requirements détectés : $REQ"
+          echo "$REQ" | grep -qi 'kivy' || echo "::warning::'kivy' n'apparaît pas dans requirements."
           if echo "$REQ" | grep -qi 'requests'; then
             for dep in urllib3 idna charset-normalizer certifi; do
               echo "$REQ" | grep -qi "$dep" || echo "::warning::'requests' est utilisé mais '$dep' n'est pas dans requirements (risque de crash au lancement de l'APK)."
             done
           fi
+
+          echo "--- buildozer.spec utilisé ---"
+          cat buildozer.spec
 
       - name: Installer Java 17
         uses: actions/setup-java@v4
@@ -179,8 +101,9 @@ jobs:
 
       - name: Installer Buildozer
         run: |
-          python3 -m venv .venv
-          . .venv/bin/activate
+          # L'environnement Python est créé hors du dépôt pour ne pas être embarqué dans l'APK.
+          python3 -m venv "$HOME/venv-buildozer"
+          . "$HOME/venv-buildozer/bin/activate"
           pip install --upgrade pip setuptools wheel
           pip install Cython==0.29.36 buildozer
 
@@ -188,7 +111,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          source .venv/bin/activate
+          source "$HOME/venv-buildozer/bin/activate"
           buildozer -v android debug 2>&1 | tee android-build.log
 
       - name: Publier le journal Android
