@@ -134,6 +134,16 @@ jobs:
   # 3. ANDROID - COMPILATION ET DIAGNOSTIC
   # ==========================================
   build-android:
+  name: Construire Gecorde pour Android
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-android:
     name: Construire Gecorde pour Android
     runs-on: ubuntu-22.04
 
@@ -147,14 +157,14 @@ jobs:
             echo "ERREUR : buildozer.spec est introuvable."
             exit 1
           fi
-
           if [ ! -f main.py ]; then
             echo "ERREUR : main.py est introuvable."
             exit 1
           fi
 
-      - name: Installer les dépendances système
+      - name: Installer les dépendances système et 32-bit libs
         run: |
+          sudo dpkg --add-architecture i386
           sudo apt-get update
           sudo apt-get install -y \
             git zip unzip \
@@ -170,14 +180,16 @@ jobs:
             libtinfo6 \
             cmake \
             libffi-dev \
-            libssl-dev
+            libssl-dev \
+            libc6:i386 libstdc++6:i386 zlib1g:i386
 
-      - name: Installer Buildozer
+      - name: Installer Buildozer et dépendances Python
         run: |
           python3 -m venv .venv
           . .venv/bin/activate
           pip install --upgrade pip setuptools wheel
-          pip install buildozer cython==0.29.36
+          pip install --upgrade cython
+          pip install buildozer
 
       - name: Compiler l'APK avec journal détaillé
         shell: bash
@@ -199,14 +211,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release
-
           APK="$(find bin -maxdepth 1 -type f -name '*.apk' -print -quit)"
-
           if [ -z "$APK" ]; then
             echo "ERREUR : aucun APK produit."
             exit 1
           fi
-
           cp "$APK" release/Gecorde-Android.apk
           test -s release/Gecorde-Android.apk
 
