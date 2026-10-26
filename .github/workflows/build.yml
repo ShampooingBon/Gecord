@@ -1,4 +1,4 @@
-name: Gecord - Android
+name: Gecord - Windows
 
 on:
   workflow_dispatch:
@@ -10,215 +10,140 @@ permissions:
   contents: read
 
 jobs:
-  build-android:
-    name: Construire Gecord pour Android
-    runs-on: ubuntu-22.04
-    timeout-minutes: 120
+  build-windows:
+    name: Construire Gecord pour Windows
+    runs-on: windows-latest
+    timeout-minutes: 60
 
     steps:
       - name: Récupérer le code source
         uses: actions/checkout@v4
 
-      - name: Préparer la configuration Android
+      - name: Vérifier le dépôt
         shell: bash
         run: |
-          set -euo pipefail
-
           echo "Contenu de la racine du dépôt :"
           ls -la
-
           test -f main.py || { echo "::error::main.py introuvable à la racine du dépôt."; exit 1; }
 
-          if [ ! -f buildozer.spec ]; then
-            echo "::warning::buildozer.spec introuvable : un fichier par défaut est généré pour cette compilation. Ajoutez un vrai buildozer.spec au dépôt."
-            cat > buildozer.spec <<'SPEC'
-          [app]
-          title = Gecord
-          package.name = gecord
-          package.domain = org.shampooingbon
-          source.dir = .
-          source.include_exts = py,png,jpg,kv,atlas,json,txt,ttf
-          source.exclude_dirs = .git,.github,bin,release,.buildozer
-          version = 0.1
-          requirements = python3,kivy,requests,urllib3,idna,certifi,pyjnius==1.9.0
-          orientation = portrait
-          fullscreen = 0
-          android.permissions = INTERNET
-          android.api = 33
-          android.minapi = 21
-          android.archs = arm64-v8a, armeabi-v7a
-          android.accept_sdk_license = True
-
-          [buildozer]
-          log_level = 2
-          warn_on_root = 1
-          SPEC
-          fi
-
-          # La licence du SDK Android doit être acceptée, sinon Buildozer attend une réponse
-          # au clavier et reste bloqué. On corrige la copie du fichier sur le runner seulement
-          # (le fichier du dépôt n'est pas modifié).
-          grep -q '^\[app\]' buildozer.spec || { echo "::error::buildozer.spec ne contient pas de section [app]."; exit 1; }
-          sed -i '/^[[:space:]]*#\{0,1\}[[:space:]]*android\.accept_sdk_license[[:space:]]*=/d' buildozer.spec
-          sed -i '0,/^\[app\]/s//[app]\nandroid.accept_sdk_license = True/' buildozer.spec
-
-          # Lignes obligatoires pour Buildozer : on ajoute celles qui manquent (copie du runner seulement).
-          ensure_key() {
-            key="$1"; value="$2"
-            if ! grep -Eq "^[[:space:]]*${key//./\\.}[[:space:]]*=" buildozer.spec; then
-              echo "::warning::'$key' manquant dans buildozer.spec : ajout de '$key = $value' pour cette compilation. Ajoute cette ligne dans ton fichier."
-              sed -i "0,/^\[app\]/s//[app]\n$key = $value/" buildozer.spec
-            fi
-          }
-          ensure_key title Gecord
-          ensure_key package.name gecord
-          ensure_key package.domain org.shampooingbon
-          ensure_key source.dir .
-          ensure_key version 0.1
-          # Un seul processeur (64 bits, tous les téléphones récents) : build plus court et moins de risques d'erreur.
-          ensure_key android.archs arm64-v8a
-          # Version fixe des build-tools : évite que le SDK télécharge la dernière (37), non testée avec p4a.
-          ensure_key android.build_tools_version 34.0.0
-
-          REQ="$(grep -E '^[[:space:]]*requirements[[:space:]]*=' buildozer.spec || true)"
-          echo "Requirements détectés : $REQ"
-
-          # pyjnius==1.7.0 n'existe pas dans les versions publiées ; on remplace par une version
-          # réellement disponible (1.9.0). C'est la cause directe du pip install pyjnius==1.7.0
-          # qui échoue dans le journal.
-          if ! echo "$REQ" | grep -qi 'pyjnius'; then
-            echo "::warning::'pyjnius' n'apparaît pas dans requirements. Ajout pour cette compilation avec une version compatible."
-            sed -i -E '/^[[:space:]]*requirements[[:space:]]*=/ s/$/,pyjnius==1.9.0/' buildozer.spec
-          else
-            sed -i -E '/^[[:space:]]*requirements[[:space:]]*=/ s/pyjnius==[0-9.]+/pyjnius==1.9.0/' buildozer.spec
-          fi
-
-          echo "$REQ" | grep -qi 'kivy' || echo "::warning::'kivy' n'apparaît pas dans requirements."
-          if echo "$REQ" | grep -qi 'requests'; then
-            for dep in urllib3 idna certifi; do
-              if ! echo "$REQ" | grep -qi "$dep"; then
-                echo "::warning::'requests' est utilisé mais '$dep' manque dans requirements : ajouté pour cette compilation (sinon l'APK plante au lancement). Ajoute-le dans ton fichier."
-                sed -i -E "s/^([[:space:]]*requirements[[:space:]]*=.*)$/\1,$dep/" buildozer.spec
-              fi
-            done
-          fi
-
-          # charset-normalizer publie des roues Android que l'outil de compilation refuse
-          # ("not a supported wheel on this platform"). On le remplace par chardet (Python pur,
-          # sans roue Android), que requests accepte à la place.
-          sed -i -E '/^[[:space:]]*requirements[[:space:]]*=/ s/charset-normalizer(==[0-9.]+)?/chardet==5.2.0/' buildozer.spec
-          REQ2="$(grep -E '^[[:space:]]*requirements[[:space:]]*=' buildozer.spec || true)"
-          if echo "$REQ2" | grep -qi 'requests' && ! echo "$REQ2" | grep -qi 'chardet'; then
-            sed -i -E '/^[[:space:]]*requirements[[:space:]]*=/ s/$/,chardet==5.2.0/' buildozer.spec
-          fi
-
-          echo "--- buildozer.spec utilisé ---"
-          cat buildozer.spec
-
-      - name: Installer Java 17
-        uses: actions/setup-java@v4
+      - name: Installer Python
+        uses: actions/setup-python@v5
         with:
-          distribution: temurin
-          java-version: "17"
+          python-version: "3.12"
+          cache: pip
 
-      - name: Installer les dépendances système
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            git zip unzip \
-            build-essential \
-            python3-pip python3-venv \
-            autoconf automake libtool libltdl-dev pkg-config \
-            zlib1g-dev libncurses5-dev libncursesw5-dev \
-            libtinfo6 cmake libffi-dev libssl-dev
-
-      - name: Restaurer le cache Buildozer
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.buildozer
-            .buildozer
-          # "v3" : change ce numéro pour forcer un cache tout neuf si besoin.
-          key: buildozer-v3-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
-          restore-keys: |
-            buildozer-v3-${{ runner.os }}-
-
-      - name: Installer Buildozer
-        run: |
-          # L'environnement Python est créé hors du dépôt pour ne pas être embarqué dans l'APK.
-          python3 -m venv "$HOME/venv-buildozer"
-          . "$HOME/venv-buildozer/bin/activate"
-          pip install --upgrade pip wheel "setuptools<81"
-          # pyproject_hooks est le module importé par le backend build de python-for-android.
-          # Le paquet pip correspondant est "pyproject-hooks" (avec tiret), et il est nécessaire
-          # pour corriger exactement ModuleNotFoundError: No module named 'pyproject_hooks'.
-          pip install "Cython==0.29.36" "buildozer" "pyproject-hooks>=1.2.0"
-          pip install sh appdirs colorama jinja2 build toml packaging virtualenv
-
-      - name: Compiler l'APK avec journal détaillé
+      - name: Installer les dépendances
         shell: bash
-        env:
-          # requests réinstalle charset-normalizer tout seul (dépendance), dont la roue Android est refusée
-          # ("not a supported wheel on this platform"). On désactive l'installation automatique des
-          # dépendances : toutes celles dont on a besoin sont déjà listées dans requirements.
-          PIP_NO_DEPS: "1"
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          # Kivy + ses bibliothèques Windows (SDL2, GLEW, ANGLE)
+          pip install "kivy[base]" pyinstaller requests certifi
+          # Si le dépôt a un requirements.txt, on l'installe aussi.
+          if [ -f requirements.txt ]; then
+            echo "requirements.txt trouvé, installation..."
+            pip install -r requirements.txt
+          fi
+          pip list
+
+      - name: Générer le fichier de build PyInstaller
+        shell: bash
+        run: |
+          cat > gecord-windows.spec <<'SPEC'
+          # -*- mode: python ; coding: utf-8 -*-
+          import os
+
+          # Bibliothèques Windows de Kivy (selon la version de Kivy, elles peuvent être absentes).
+          try:
+              from kivy_deps import sdl2, glew
+              kivy_deps_trees = [Tree(p) for p in (sdl2.dep_bins + glew.dep_bins)]
+              try:
+                  from kivy_deps import angle
+                  kivy_deps_trees += [Tree(p) for p in angle.dep_bins]
+              except Exception:
+                  pass
+          except Exception:
+              kivy_deps_trees = []
+
+          # Fichiers du projet à embarquer (images, .kv, polices, json...), hors fichiers techniques.
+          EXCLUDE_DIRS = {'.git', '.github', 'build', 'dist', 'release', '.buildozer',
+                          'bin', '__pycache__', 'venv', '.venv', 'env'}
+          DATA_EXTS = {'.png', '.jpg', '.jpeg', '.gif', '.kv', '.atlas', '.json',
+                       '.txt', '.ttf', '.otf', '.wav', '.mp3', '.ogg', '.ico'}
+          datas = []
+          for root, dirs, files in os.walk('.'):
+              dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
+              for f in files:
+                  if os.path.splitext(f)[1].lower() in DATA_EXTS and f != 'requirements.txt':
+                      src = os.path.join(root, f)
+                      dest = os.path.normpath(root)
+                      datas.append((src, dest))
+
+          a = Analysis(
+              ['main.py'],
+              pathex=[],
+              binaries=[],
+              datas=datas,
+              hiddenimports=['requests', 'certifi'],
+              hookspath=[],
+              runtime_hooks=[],
+              excludes=[],
+              noarchive=False,
+          )
+          pyz = PYZ(a.pure)
+
+          exe = EXE(
+              pyz,
+              a.scripts,
+              a.binaries,
+              a.datas,
+              *kivy_deps_trees,
+              [],
+              name='Gecord',
+              debug=False,
+              strip=False,
+              upx=False,
+              console=False,
+              icon=None,
+          )
+          SPEC
+          echo "--- gecord-windows.spec ---"
+          cat gecord-windows.spec
+
+      - name: Compiler l'exécutable avec journal détaillé
+        shell: bash
         run: |
           set -o pipefail
-          source "$HOME/venv-buildozer/bin/activate"
-
-          # Vérification : les dépendances de python-for-android sont bien présentes.
-          python -c "import sh, appdirs, colorama, jinja2, pyproject_hooks; print('deps OK')"
-
-          # Vérification explicite de la compatibilité de la version de pyjnius.
-          python - <<'PY'
-          import sys
-          print("Python:", sys.version)
-          try:
-              import pyjnius
-              print("pyjnius:", pyjnius.__version__)
-          except Exception as e:
-              print("pyjnius non installé dans l'environnement du build (normal tant que p4a ne lance pas le recipe) :", e)
-          PY
-
-          buildozer -v android debug 2>&1 | tee android-build.log
+          pyinstaller --noconfirm --clean gecord-windows.spec 2>&1 | tee windows-build.log
 
       - name: Afficher la fin du journal en cas d'échec
         if: failure()
         shell: bash
         run: |
-          # Le journal se termine par un long récapitulatif de variables ; l'erreur réelle est juste avant.
-          # On ignore aussi les barres de progression et la liste des images système du SDK.
-          awk 'tolower($0) ~ /^# *environment/ {exit} {print}' android-build.log \
-            | grep -v -E '^\[[ =]*\]|system-images;' > android-before-env.log || true
-          echo "===== 120 dernières lignes avant le récapitulatif ====="
-          tail -n 120 android-before-env.log || true
+          echo "===== 120 dernières lignes ====="
+          tail -n 120 windows-build.log || true
           echo "===== Lignes contenant une erreur ====="
-          grep -n -i -E 'error|failed|traceback|exception|not found' android-before-env.log | tail -n 30 || true
+          grep -n -i -E 'error|failed|traceback|exception|not found' windows-build.log | tail -n 30 || true
 
-      - name: Publier le journal Android
+      - name: Publier le journal Windows
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gecord-Android-Logs
-          path: android-build.log
+          name: Gecord-Windows-Logs
+          path: windows-build.log
           if-no-files-found: ignore
 
-      - name: Vérifier et préparer l'APK
+      - name: Vérifier et préparer l'exécutable
         shell: bash
         run: |
           set -euo pipefail
+          test -s dist/Gecord.exe || { echo "ERREUR : dist/Gecord.exe n'a pas été produit."; ls -la dist || true; exit 1; }
           mkdir -p release
-          APK="$(find bin -maxdepth 1 -type f -name '*.apk' -print -quit)"
-          if [ -z "$APK" ]; then
-            echo "ERREUR : aucun APK produit."
-            exit 1
-          fi
-          cp "$APK" release/Gecord-Android.apk
-          test -s release/Gecord-Android.apk
+          cp dist/Gecord.exe release/Gecord-Windows.exe
+          ls -la release
 
-      - name: Publier la version Android
+      - name: Publier la version Windows
         uses: actions/upload-artifact@v4
         with:
-          name: Gecord-Android
-          path: release/Gecord-Android.apk
+          name: Gecord-Windows
+          path: release/Gecord-Windows.exe
           if-no-files-found: error
