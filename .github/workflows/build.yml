@@ -60,12 +60,29 @@ jobs:
           sed -i '/^[[:space:]]*#\{0,1\}[[:space:]]*android\.accept_sdk_license[[:space:]]*=/d' buildozer.spec
           sed -i '0,/^\[app\]/s//[app]\nandroid.accept_sdk_license = True/' buildozer.spec
 
+          # Lignes obligatoires pour Buildozer : on ajoute celles qui manquent (copie du runner seulement).
+          ensure_key() {
+            key="$1"; value="$2"
+            if ! grep -Eq "^[[:space:]]*${key//./\\.}[[:space:]]*=" buildozer.spec; then
+              echo "::warning::'$key' manquant dans buildozer.spec : ajout de '$key = $value' pour cette compilation. Ajoute cette ligne dans ton fichier."
+              sed -i "0,/^\[app\]/s//[app]\n$key = $value/" buildozer.spec
+            fi
+          }
+          ensure_key title Gecord
+          ensure_key package.name gecord
+          ensure_key package.domain org.gecord
+          ensure_key source.dir .
+          ensure_key version 0.1
+
           REQ="$(grep -E '^[[:space:]]*requirements[[:space:]]*=' buildozer.spec || true)"
           echo "Requirements détectés : $REQ"
           echo "$REQ" | grep -qi 'kivy' || echo "::warning::'kivy' n'apparaît pas dans requirements."
           if echo "$REQ" | grep -qi 'requests'; then
             for dep in urllib3 idna charset-normalizer certifi; do
-              echo "$REQ" | grep -qi "$dep" || echo "::warning::'requests' est utilisé mais '$dep' n'est pas dans requirements (risque de crash au lancement de l'APK)."
+              if ! echo "$REQ" | grep -qi "$dep"; then
+                echo "::warning::'requests' est utilisé mais '$dep' manque dans requirements : ajouté pour cette compilation (sinon l'APK plante au lancement). Ajoute-le dans ton fichier."
+                sed -i -E "s/^([[:space:]]*requirements[[:space:]]*=.*)$/\1,$dep/" buildozer.spec
+              fi
             done
           fi
 
