@@ -40,7 +40,7 @@ jobs:
           source.include_exts = py,png,jpg,kv,atlas,json,txt,ttf
           source.exclude_dirs = .git,.github,bin,release,.buildozer
           version = 0.1
-          requirements = python3,kivy,requests,urllib3,idna,charset-normalizer,certifi,pyjnius==1.9.0
+          requirements = python3,kivy,requests,urllib3,idna,certifi,pyjnius==1.9.0
           orientation = portrait
           fullscreen = 0
           android.permissions = INTERNET
@@ -83,8 +83,9 @@ jobs:
           REQ="$(grep -E '^[[:space:]]*requirements[[:space:]]*=' buildozer.spec || true)"
           echo "Requirements détectés : $REQ"
 
-          # pyjnius 1.7.0 n'existe pas dans les binaires publiés ; on force la version réellement disponible.
-          # Cela évite l'échec de pip3 install pyjnius==1.7.0 observé dans le log.
+          # pyjnius==1.7.0 n'existe pas dans les versions publiées ; on remplace par une version
+          # réellement disponible (1.9.0). C'est la cause directe du pip install pyjnius==1.7.0
+          # qui échoue dans le journal.
           if ! echo "$REQ" | grep -qi 'pyjnius'; then
             echo "::warning::'pyjnius' n'apparaît pas dans requirements. Ajout pour cette compilation avec une version compatible."
             sed -i -E '/^[[:space:]]*requirements[[:space:]]*=/ s/$/,pyjnius==1.9.0/' buildozer.spec
@@ -148,8 +149,9 @@ jobs:
           python3 -m venv "$HOME/venv-buildozer"
           . "$HOME/venv-buildozer/bin/activate"
           pip install --upgrade pip wheel "setuptools<81"
-          # pyproject-hooks est requis par le backend build de python-for-android pour compiler des wheels.
-          # Sans lui, l'import de pyproject_hooks échoue exactement comme dans le log fourni.
+          # pyproject_hooks est le module importé par le backend build de python-for-android.
+          # Le paquet pip correspondant est "pyproject-hooks" (avec tiret), et il est nécessaire
+          # pour corriger exactement ModuleNotFoundError: No module named 'pyproject_hooks'.
           pip install "Cython==0.29.36" "buildozer" "pyproject-hooks>=1.2.0"
           pip install sh appdirs colorama jinja2 build toml packaging virtualenv
 
